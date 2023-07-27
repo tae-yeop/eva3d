@@ -91,11 +91,15 @@ def generate(opt, dataset, g_ema, device, mean_latent, is_video):
             imageio.mimwrite(os.path.join(opt.results_dst_dir, 'images_paper_video', 'video_{}.mp4'.format(str(i).zfill(7))), all_img, fps=30, quality=8)
         else:
             img_list = []
-            for k in range(3):
+            for k in range(5):
                 if k == 0:
                     delta = R.from_rotvec(np.pi/8 * np.array([0, 1, 0]))
-                elif k == 2:
+                elif k == 1:
+                    delta = R.from_rotvec(np.pi/16 * np.array([0, 1, 0]))
+                elif k == 3:
                     delta = R.from_rotvec(-np.pi/8 * np.array([0, 1, 0]))
+                elif k == 4:
+                    delta = R.from_rotvec(-np.pi/16 * np.array([0, 1, 0]))
                 else:
                     delta = R.from_rotvec(0 * np.array([0, 1, 0]))
                 r = R.from_rotvec(sample_theta[0, :3].cpu().numpy())
@@ -121,79 +125,87 @@ def generate(opt, dataset, g_ema, device, mean_latent, is_video):
 
                 rgb_images_thumbs = out[1].detach().cpu()[..., :3].permute(0, 3, 1, 2)
                 g_ema.zero_grad()
-                img_list.append(rgb_images_thumbs)
-        ##################################
-        latent = g_ema.styles_and_noise_forward(sample_z[:1], None, opt.truncation_ratio,
-                                                mean_latent, False)
+                # img_list.append(rgb_images_thumbs)
 
-        sdf = g_ema.renderer.marching_cube_posed(latent[0], sample_beta, sample_theta, resolution=500, size=1.4).detach()
-        marching_cubes_mesh, _, _ = extract_mesh_with_marching_cubes(sdf, level_set=0)
-        marching_cubes_mesh = trimesh.smoothing.filter_humphrey(marching_cubes_mesh, beta=0.2, iterations=5)
-        marching_cubes_mesh_filename = os.path.join(opt.results_dst_dir,'marching_cubes_meshes_posed','sample_{}_marching_cubes_mesh.obj'.format(i))
-        with open(marching_cubes_mesh_filename, 'w') as f:
-            marching_cubes_mesh.export(f,file_type='obj')
-        ##################################
-        cam_R = torch.eye(3).cuda().unsqueeze(0)
-        cam_R[0, 2, 2] = -1
-        cam_R[0, 0, 0] = -1
-        cam_trans = sample_trans.view(1, -1)
-        cam_trans[0, :2] = 0
-        # if '20w_fashion' in dataset.path:
-        #     cam_trans /= 2.
-        camera = create_cameras(R = cam_R, T = cam_trans, fov=4.5)
-        # renderer = create_mesh_renderer(camera, 256)
-        renderer = create_mesh_renderer(camera, opt.renderer_output_size[0])
-        verts, faces_idx, _ = load_obj(marching_cubes_mesh_filename)
-        faces = faces_idx.verts_idx
-        verts_rgb = torch.ones_like(verts)[None] # (1, V, 3)
-        textures = TexturesVertex(verts_features=verts_rgb.to(device))
-
-        if is_video:
-            video_list = []
-            for k in tqdm(range(120)):
-                verts_clone = verts.clone().cpu().numpy()
-                if k < 30:
-                    angle = (-panning_angle/2) * (k / 30)
-                elif k >= 30 and k < 90:
-                    angle = -panning_angle/2 + panning_angle * ((k - 30) / 60)
-                else:
-                    angle = panning_angle/2 * ((120 - k) / 30)
-                delta = R.from_rotvec(angle * np.array([0, 1, 0]))
-                verts_clone = torch.from_numpy(delta.apply(verts_clone)).float()
-                pt3d_mesh = Meshes(
-                    verts=[verts_clone.to(device)],
-                    faces=[faces.to(device)],
-                    textures=textures
-                )
-                image = (renderer(pt3d_mesh) * 255. + 0.5)[:, :, :, :3].cpu().numpy()
-                video_list.append(image)
-            all_img = np.concatenate(video_list, 0).astype(np.uint8)
-            imageio.mimwrite(os.path.join(opt.results_dst_dir, 'images_paper_video', 'geo_{}.mp4'.format(str(i).zfill(7))), all_img, fps=30, quality=8)
-        else:
-            for k in range(3):
-                verts_clone = verts.clone().cpu().numpy()
-                if k == 0:
-                    delta = R.from_rotvec(-np.pi/8 * np.array([0, 1, 0]))
-                elif k == 2:
-                    delta = R.from_rotvec(np.pi/8 * np.array([0, 1, 0]))
-                else:
-                    delta = R.from_rotvec(0 * np.array([0, 1, 0]))
-                verts_clone = torch.from_numpy(delta.apply(verts_clone)).float()
-                pt3d_mesh = Meshes(
-                    verts=[verts_clone.to(device)],
-                    faces=[faces.to(device)],
-                    textures=textures
-                )
-                image = renderer(pt3d_mesh)
-                image = image * 2 - 1
-                img_list.append(image.reshape(opt.renderer_output_size[0], opt.renderer_output_size[0], 4)[:, opt.renderer_output_size[0]//4:opt.renderer_output_size[0]//4*3, :3].unsqueeze(0).permute(0, 3, 1, 2).cpu())
-
-            utils.save_image(torch.cat(img_list, 0),
-                os.path.join(opt.results_dst_dir, 'images_paper_fig','{}.png'.format(str(i).zfill(7))),
-                nrow=3,
+                utils.save_image(rgb_images_thumbs,
+                os.path.join(opt.results_dst_dir, 'images_paper_fig',f'{str(i).zfill(7)}_{k}.png'),
                 normalize=True,
                 range=(-1, 1),
                 padding=0,)
+        ##################################
+        # latent = g_ema.styles_and_noise_forward(sample_z[:1], None, opt.truncation_ratio,
+        #                                         mean_latent, False)
+
+        # sdf = g_ema.renderer.marching_cube_posed(latent[0], sample_beta, sample_theta, resolution=500, size=1.4).detach()
+        # marching_cubes_mesh, _, _ = extract_mesh_with_marching_cubes(sdf, level_set=0)
+        # marching_cubes_mesh = trimesh.smoothing.filter_humphrey(marching_cubes_mesh, beta=0.2, iterations=5)
+        # marching_cubes_mesh_filename = os.path.join(opt.results_dst_dir,'marching_cubes_meshes_posed','sample_{}_marching_cubes_mesh.obj'.format(i))
+        # with open(marching_cubes_mesh_filename, 'w') as f:
+        #     marching_cubes_mesh.export(f,file_type='obj')
+        # ##################################
+        # cam_R = torch.eye(3).cuda().unsqueeze(0)
+        # cam_R[0, 2, 2] = -1
+        # cam_R[0, 0, 0] = -1
+        # cam_trans = sample_trans.view(1, -1)
+        # cam_trans[0, :2] = 0
+        # # if '20w_fashion' in dataset.path:
+        # #     cam_trans /= 2.
+        # camera = create_cameras(R = cam_R, T = cam_trans, fov=4.5)
+        # # renderer = create_mesh_renderer(camera, 256)
+        # renderer = create_mesh_renderer(camera, opt.renderer_output_size[0])
+        # verts, faces_idx, _ = load_obj(marching_cubes_mesh_filename)
+        # faces = faces_idx.verts_idx
+        # verts_rgb = torch.ones_like(verts)[None] # (1, V, 3)
+        # textures = TexturesVertex(verts_features=verts_rgb.to(device))
+
+        if is_video:
+            ...
+            # video_list = []
+            # for k in tqdm(range(120)):
+            #     verts_clone = verts.clone().cpu().numpy()
+            #     if k < 30:
+            #         angle = (-panning_angle/2) * (k / 30)
+            #     elif k >= 30 and k < 90:
+            #         angle = -panning_angle/2 + panning_angle * ((k - 30) / 60)
+            #     else:
+            #         angle = panning_angle/2 * ((120 - k) / 30)
+            #     delta = R.from_rotvec(angle * np.array([0, 1, 0]))
+            #     verts_clone = torch.from_numpy(delta.apply(verts_clone)).float()
+            #     pt3d_mesh = Meshes(
+            #         verts=[verts_clone.to(device)],
+            #         faces=[faces.to(device)],
+            #         textures=textures
+            #     )
+            #     image = (renderer(pt3d_mesh) * 255. + 0.5)[:, :, :, :3].cpu().numpy()
+            #     video_list.append(image)
+            # all_img = np.concatenate(video_list, 0).astype(np.uint8)
+            # imageio.mimwrite(os.path.join(opt.results_dst_dir, 'images_paper_video', 'geo_{}.mp4'.format(str(i).zfill(7))), all_img, fps=30, quality=8)
+        else:
+            ...
+            # for k in range(3):
+            #     verts_clone = verts.clone().cpu().numpy()
+            #     if k == 0:
+            #         delta = R.from_rotvec(-np.pi/8 * np.array([0, 1, 0]))
+            #     elif k == 2:
+            #         delta = R.from_rotvec(np.pi/8 * np.array([0, 1, 0]))
+            #     else:
+            #         delta = R.from_rotvec(0 * np.array([0, 1, 0]))
+            #     verts_clone = torch.from_numpy(delta.apply(verts_clone)).float()
+            #     pt3d_mesh = Meshes(
+            #         verts=[verts_clone.to(device)],
+            #         faces=[faces.to(device)],
+            #         textures=textures
+            #     )
+            #     image = renderer(pt3d_mesh)
+            #     image = image * 2 - 1
+            #     img_list.append(image.reshape(opt.renderer_output_size[0], opt.renderer_output_size[0], 4)[:, opt.renderer_output_size[0]//4:opt.renderer_output_size[0]//4*3, :3].unsqueeze(0).permute(0, 3, 1, 2).cpu())
+
+            # utils.save_image(torch.cat(img_list, 0),
+            #     os.path.join(opt.results_dst_dir, 'images_paper_fig','{}.png'.format(str(i).zfill(7))),
+            #     nrow=3,
+            #     normalize=True,
+            #     range=(-1, 1),
+            #     padding=0,)
         # os.system('rm {}'.format(marching_cubes_mesh_filename))
 
 if __name__ == "__main__":

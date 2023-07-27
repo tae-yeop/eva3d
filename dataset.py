@@ -408,6 +408,26 @@ class DeepFashionDataset(Dataset):
 
         return img, thumb_img, trans, beta, theta
 
+
+class GeneBodyDataset(DeepFashionDataset):
+    def __init__(self, ):
+        ...
+    def __getitem__(self, index):
+        try:
+            _img = Image.open(self.image_path[index]).convert("RGB")
+            _seg = Image.open(self.seg_path[index]).convert("RGB")
+        except:
+            return self.__getitem__((index + 1) % self.__len__())
+
+        img = np.asarray(_img.resize(self.resolution, Image.LANCZOS))
+        thumb_img = np.asarray(_img.resize(self.nerf_resolution, Image.LANCZOS))
+        seg = np.asarray(_seg.resize(self.resolution, Image.HAMMING))
+        thumb_seg = np.asarray(_seg.resize(self.nerf_resolution, Image.HAMMING))
+
+        mask = seg.sum(-1) == 0
+        
+        
+
 class AISTDataset(Dataset):
     def __init__(self, folder, transform, resolution=(256, 256), nerf_resolution=(256, 256),
                  white_bg=True, random_flip=False, is_train=True):
